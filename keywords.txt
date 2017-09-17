@@ -1,0 +1,15 @@
+IM920	KEYWORD1
+IM920Frame	KEYWORD1
+PacketOperator	KEYWORD1
+DataPacket	KEYWORD1
+CommandPacket	KEYWORD1
+AckPacket	KEYWORD1
+NoticePacket	KEYWORD1
+begin	KEYWORD2
+end		KEYWORD2
+listen	KEYWORD2
+send	KEYWORD2
+sendData	KEYWORD2
+sendCommand	KEYWORD2
+sendAck		KEYWORD2
+sendNotice	KEYWORD2

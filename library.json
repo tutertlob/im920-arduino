@@ -1,0 +1,25 @@
+{
+	"name": "IM920",
+	"frameworks": "arduino",
+	"platforms": "atmelavr",
+	"keywords": "im920, wireles, protocol, radio, communication",
+	"description": "IM920 wireless modules in ECIO mode",
+	"url": "",
+	"authors":
+	{
+		"name": "Reiji Nishiyama",
+		"maintainer": true
+	},
+	"repository":
+	{
+		"type": "git",
+		"url": ""
+	},
+	"include":
+	[
+		"*.cpp",
+		"*.h",
+		"examples"
+	],
+	"verison": "0.1.0"
+}
