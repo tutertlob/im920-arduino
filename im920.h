@@ -1,3 +1,9 @@
+/**
+ * Copyright (c) 2017 Reiji Nishiyama. All rights reserved.
+ * Licensed under the MIT license.
+ * See LICENSE file in the repo for full license information.
+ */
+
 #ifndef IM920_H
 #define IM920_H
 

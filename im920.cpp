@@ -1,3 +1,9 @@
+/**
+ * Copyright (c) 2017 Reiji Nishiyama. All rights reserved.
+ * Licensed under the MIT license.
+ * See LICENSE file in the repo for full license information.
+ */
+
 #include "im920.h"
 
 #define __ASSERT_USE_STDERR
