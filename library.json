@@ -1,9 +1,10 @@
 {
 	"name": "IM920",
+	"version": "1.0.0",
 	"frameworks": "arduino",
 	"platforms": "atmelavr",
 	"keywords": "im920, wireles, protocol, radio, communication, interplan",
-	"description": "IM920 wireless modules in ECIO mode",
+	"description": "This library supports IM920 wireless modules in DCIO mode",
 	"repository":
 	{
 		"type": "git",
@@ -14,5 +15,5 @@
 		"*.cpp",
 		"*.h",
 		"examples"
-	],
+	]
 }

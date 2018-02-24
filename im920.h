@@ -36,7 +36,9 @@ private:
 
 	int8_t _rssi;
 
-	uint8_t _payload[FRAME_PAYLOAD_SIZE];
+//	uint8_t _payload[FRAME_PAYLOAD_SIZE];
+	// +1 is for '\0' character as the termination of payload.
+	uint8_t _payload[FRAME_PAYLOAD_SIZE + 1];
 
 	size_t _p;
 
@@ -132,7 +134,7 @@ public:
 
 	void setFrameID(IM920Frame& frame, uint8_t num) const;
 
-	void updatePacketLength(IM920Frame& frame);
+	void updatePacketLength(IM920Frame& frame) const;
 
 };
 
@@ -140,7 +142,6 @@ class AckPacket : public PacketOperator
 {
 private:
 	static AckPacket* _instance;
-
 
 protected:
 	AckPacket();
@@ -158,7 +159,7 @@ public:
 
 	size_t getResponseLength(const IM920Frame& frame) const;
 
-	size_t getResponse(const IM920Frame& frame, char buf[]) const;
+	size_t getResponse(const IM920Frame& frame, char buf[], size_t size) const;
 
 	const char* getResponse(const IM920Frame& frame) const;
 
@@ -188,7 +189,7 @@ public:
 
 	size_t getCommandParamLength(const IM920Frame& frame) const;
 
-	size_t getCommandParam(const IM920Frame& frame, char buf[]) const;
+	size_t getCommandParam(const IM920Frame& frame, char buf[], size_t size) const;
 
 	const char* getCommandParam(const IM920Frame& frame) const;
 
@@ -212,25 +213,13 @@ public:
 
 	void reset(IM920Frame& frame, size_t size=0) const;
 
-	int decodeData(IM920Frame& frame) const;
-
-	int encodeData(IM920Frame& frame) const;
-
 	size_t getDataLength(const IM920Frame& frame) const;
 
-	size_t getData(const IM920Frame& frame, uint8_t buf[]) const;
+	size_t getData(const IM920Frame& frame, uint8_t buf[], size_t size) const;
 
 	const uint8_t* getData(const IM920Frame& frame) const;
 
-	size_t getDataWithDecode(IM920Frame& frame, uint8_t buf[]) const;
-
-	size_t getDecodeLength(IM920Frame& frame) const;
-
-	size_t getEncodeLength(IM920Frame& frame) const;
-
 	size_t setData(IM920Frame& frame, const uint8_t data[], size_t length) const;
-
-	size_t setDataWithEncode(IM920Frame& frame, uint8_t data[], size_t length) const;
 
 };
 
@@ -252,11 +241,11 @@ public:
 
 	size_t getNoticeLength(const IM920Frame& frame) const;
 
-	size_t getNotice(const IM920Frame& frame, char buf[]) const;
+	size_t getNotice(const IM920Frame& frame, char buf[], size_t size) const;
 
 	const char* getNotice(const IM920Frame& frame) const;
 
-	size_t setNotice(IM920Frame& frame, char notice[]) const;
+	size_t setNotice(IM920Frame& frame, const char notice[]) const;
 
 };
 

@@ -6,16 +6,15 @@
 
 #include "im920.h"
 
+#define NDEBUG
 #define __ASSERT_USE_STDERR
 #include <assert.h>
-#include <DebugUtils.h>
-#include <base64.hpp>
+#include <stdio.h>
 
 #define IM920_PACKET_LENGTH_I		0
 #define IM920_PACKET_LENGTH_MASK	(0x3F)
 #define IM920_PACKET_FLAG_I			1
 #define IM920_PACKET_FLAG_MASK		(0x18)
-#define IM920_PACKET_FLAG_MASK_ENC	(0x20)
 #define IM920_PACKET_FLAG_MASK_FRAG	(0x10)
 #define IM920_PACKET_FLAG_MASK_ACK	(0x08)
 #define IM920_PACKET_TYPE_I			1
@@ -47,17 +46,17 @@ NoticePacket* NoticePacket::_instance = nullptr;
 static const PROGMEM char* const IM920_RESPONSE_OK = "OK";
 static const PROGMEM char* const IM920_COMMAND_TERM = "\r\n";
 
-// handle diagnostic informations given by assertion and abort program execution:
+#ifndef NDEBUG
 void __assert(const char *__func, const char *__file, int __lineno, const char *__sexp) {
-    // transmit diagnostic informations through serial link. 
     Serial.println(__func);
     Serial.println(__file);
     Serial.println(__lineno, DEC);
     Serial.println(__sexp);
     Serial.flush();
-    // abort program execution.
+
     abort();
 }
+#endif // NDEBUG
 
 static long _tick(long& count, unsigned long& previous)
 {
@@ -140,11 +139,13 @@ int IM920::listen(IM920Frame& frame, long timeout)
 			
 			state = IM920_STATE_RECEIVING_PACKET_HDR;
 		} else if (state == IM920_STATE_RECEIVING_PACKET_HDR) {
-			if (_im920.available() < 3) continue;
+			if (_im920.available() < 8) continue;
 
-			frame.put(_im920.read()); // read the frame length
-			frame.put(_im920.read()); // read the flag
-			frame.put(_im920.read()); // read the frame ID
+			frame.put(_im920.parseInt8()); // read the frame length
+			_im920.read(); // discard ','
+			frame.put(_im920.parseInt8()); // read the flag
+			_im920.read(); // discard ','
+			frame.put(_im920.parseInt8()); // read the frame ID
 			
 			state = IM920_STATE_RECEIVING_PACKET_PAYLOAD;
 		} else if (state == IM920_STATE_RECEIVING_PACKET_PAYLOAD) {
@@ -154,23 +155,22 @@ int IM920::listen(IM920Frame& frame, long timeout)
 			assert(len > 0 && len <= IM920_PACKET_PAYLOAD_SIZE);
 			if (!(len > 0 && len <= IM920_PACKET_PAYLOAD_SIZE)) break;
 
-			while (_im920.available() && packet.getPayloadLength(frame) < len)
+			while (_im920.available() >= 3 && packet.getPayloadLength(frame) < len)
 			{
-				frame.put(_im920.read());
+				_im920.read(); // discard ','
+				frame.put(_im920.parseInt8());
 			}
 			
 			if (packet.getPayloadLength(frame) == len) {
 				// discard CR+LF
 				while (_im920.read() != '\n');
 				
-				if (packet.getPacketType(frame) == IM920_PACKET_DATA && packet.isEncoded(frame)) {
-					static_cast<DataPacket&>(packet).decodeData(frame);
-				} else if (packet.getPacketType(frame) == IM920_PACKET_COMMAND) {
+				if (packet.getPacketType(frame) == IM920_PACKET_COMMAND) {
 					CommandPacket& command = static_cast<CommandPacket&>(packet);
 					uint8_t cmd = command.getCommand(frame);
 					
 					if (cmd == COMMAND_IM920_CMD) {
-						char response[ACK_PARAM_LEN];
+						char response[ACK_PARAM_LEN + 1];
 						_im920.execIM920Cmd(command.getCommandParam(frame), response, sizeof(response));
 						
 						if (command.isAckRequested(frame)) {
@@ -223,9 +223,7 @@ size_t IM920::sendData(const uint8_t data[], size_t length, bool fragment)
 		// set the fragment flag as the application demand
 		packet.setFragment(frame, fragment);
 		
-		// Encode the data then send it.
-		// Encoding data inflates the volume of the data so that a portion of the data can be sent once.
-		sentLen += packet.setDataWithEncode(frame, data + sentLen, length - sentLen);
+		sentLen += packet.setData(frame, data + sentLen, length - sentLen);
 		if (length - sentLen > 0) {
 			packet.setFragment(frame, true);
 		}
@@ -305,7 +303,6 @@ int IM920::sendNotice(const char notice[])
 	packet.reset(frame);
 	
 	sentLen = packet.setNotice(frame, notice);
-	if (sentLen != strlen(notice)) return -1;
 
 	sentLen = _send(frame);
 	if (!(sentLen == frame.getFrameLength())) return -1;
@@ -420,13 +417,6 @@ int PacketOperator::getPacketType(const IM920Frame& frame) const
 	return frame.getArray()[IM920_PACKET_TYPE_I] & IM920_PACKET_TYPE_MASK;
 }
 
-bool PacketOperator::isEncoded(const IM920Frame& frame) const
-{
-	assert(frame.getFrameLength() >= IM920_PACKET_HEADER_SIZE);
-	
-	return (frame.getArray()[IM920_PACKET_FLAG_I] & IM920_PACKET_FLAG_MASK_ENC) != 0 ? true : false;
-}
-
 bool PacketOperator::isFragmented(const IM920Frame& frame) const
 {
 	assert(frame.getFrameLength() >= IM920_PACKET_HEADER_SIZE);
@@ -462,12 +452,6 @@ void PacketOperator::setPacketType(IM920Frame& frame, uint8_t type) const
 	frame.getArray()[IM920_PACKET_TYPE_I] |= (frame.getArray()[IM920_PACKET_TYPE_I] & ~IM920_PACKET_TYPE_MASK) | type;
 }
 
-void PacketOperator::setEncode(IM920Frame& frame, bool encode) const
-{
-	if (encode) frame.getArray()[IM920_PACKET_FLAG_I] |= IM920_PACKET_FLAG_MASK_ENC;
-	else frame.getArray()[IM920_PACKET_FLAG_I] &= ~IM920_PACKET_FLAG_MASK_ENC;
-}
-
 void PacketOperator::setFragment(IM920Frame& frame, bool fragment) const
 {
 	if (fragment) frame.getArray()[IM920_PACKET_FLAG_I] |= IM920_PACKET_FLAG_MASK_FRAG;
@@ -485,7 +469,7 @@ void PacketOperator::setFrameID(IM920Frame& frame, uint8_t num) const
 	frame.getArray()[IM920_PACKET_FRAMEID_I] = num;
 }
 
-void PacketOperator::updatePacketLength(IM920Frame& frame)
+void PacketOperator::updatePacketLength(IM920Frame& frame) const
 {
 	size_t length;
 	
@@ -530,20 +514,23 @@ void AckPacket::setCommand(IM920Frame& frame, uint8_t cmd) const
 
 size_t AckPacket::getResponseLength(const IM920Frame& frame) const
 {
-	assert( strlen( reinterpret_cast<const char*>(getPayloadArray(frame) + IM920_PACKET_ACK_PARAM_I)) == (getPacketLength(frame) - ACK_COMMAND_SIZE - 1 ));
+	assert( strlen( reinterpret_cast<const char*>(getPayloadArray(frame) + IM920_PACKET_ACK_PARAM_I)) == (getPacketLength(frame) - ACK_COMMAND_SIZE));
 
-	return getPacketLength(frame) - ACK_COMMAND_SIZE - 1 /* '\0' */ ;
+	return getPacketLength(frame) - ACK_COMMAND_SIZE;
 }
 
-size_t AckPacket::getResponse(const IM920Frame& frame, char buf[]) const
+size_t AckPacket::getResponse(const IM920Frame& frame, char buf[], size_t size) const
 {
 	const char* param = reinterpret_cast<const char*>( getPayloadArray(frame) + IM920_PACKET_ACK_PARAM_I);
 	size_t len = getResponseLength(frame);
 	
-	strncpy(buf, param, len + 1);
-	
-	assert(buf[len] == '\0');
+	if (size < len + 1)
+		len = size - 1;
 
+	// '\0' character is not copied.
+	strncpy(buf, param, len);
+	buf[len] = '\0';
+	
 	return len;
 }
 
@@ -554,7 +541,7 @@ const char* AckPacket::getResponse(const IM920Frame& frame) const
 
 size_t AckPacket::setResponse(IM920Frame& frame, const char response[]) const
 {
-	size_t responseLen = strlen(response) + 1;
+	size_t responseLen = strlen(response);
 
 	if (responseLen > ACK_PARAM_LEN) responseLen = ACK_PARAM_LEN;
 	
@@ -562,11 +549,11 @@ size_t AckPacket::setResponse(IM920Frame& frame, const char response[]) const
 	
 	char* buf = reinterpret_cast<char*>(getPayloadArray(frame) + IM920_PACKET_ACK_PARAM_I);
 	strncpy(buf, response, responseLen);
-	buf[responseLen - 1] = '\0';
+	buf[responseLen] = '\0';
 	
 	updatePacketLength(frame);
 	
-	return responseLen - 1;
+	return responseLen;
 }
 
 CommandPacket::CommandPacket()
@@ -605,16 +592,19 @@ void CommandPacket::setCommand(IM920Frame& frame, uint8_t cmd) const
 
 size_t CommandPacket::getCommandParamLength(const IM920Frame& frame) const
 {
-	assert(strlen(reinterpret_cast<const char*>(getPayloadArray(frame) + IM920_PACKET_COMMAND_PARAM_I)) == (getPacketLength(frame) - COMMAND_SIZE - 1));
+	assert(strlen(reinterpret_cast<const char*>(getPayloadArray(frame) + IM920_PACKET_COMMAND_PARAM_I)) == (getPacketLength(frame) - COMMAND_SIZE));
 
-	return getPacketLength(frame) - COMMAND_SIZE - 1 /* '\0' */ ;
+	return getPacketLength(frame) - COMMAND_SIZE;
 }
 
-size_t CommandPacket::getCommandParam(const IM920Frame& frame, char buf[]) const
+size_t CommandPacket::getCommandParam(const IM920Frame& frame, char buf[], size_t size) const
 {
 	const char* param = reinterpret_cast<const char*>(getPayloadArray(frame) + IM920_PACKET_COMMAND_PARAM_I);
 	size_t len = getCommandParamLength(frame);
 	
+	if (size < len + 1)
+		len = size;
+
 	strncpy(buf, param, len);
 	buf[len] = '\0';
 
@@ -628,7 +618,7 @@ const char* CommandPacket::getCommandParam(const IM920Frame& frame) const
 
 size_t CommandPacket::setCommandParam(IM920Frame& frame, const char param[]) const
 {
-	size_t paramLen = strlen(param) + 1;
+	size_t paramLen = strlen(param);
 
 	if (paramLen > COMMAND_PARAM_LEN) paramLen = COMMAND_PARAM_LEN;
 	
@@ -636,11 +626,11 @@ size_t CommandPacket::setCommandParam(IM920Frame& frame, const char param[]) con
 	
 	char* buf = reinterpret_cast<char*>(getPayloadArray(frame) + IM920_PACKET_COMMAND_PARAM_I);
 	strncpy(buf, param, paramLen);
-	buf[paramLen - 1] = '\0';
+	buf[paramLen] = '\0';
 	
 	updatePacketLength(frame);
 	
-	return paramLen - 1;
+	return paramLen;
 }
 
 DataPacket::DataPacket()
@@ -667,41 +657,6 @@ void DataPacket::reset(IM920Frame& frame, size_t size) const
 	setPacketType(frame, IM920_PACKET_DATA);
 }
 
-int DataPacket::decodeData(IM920Frame& frame) const
-{
-	if (!isEncoded(frame)) return 0;
-	
-	size_t decodeLen = getDecodeLength(frame);
-	uint8_t decoded[decodeLen];
-
-	getDataWithDecode(frame, decoded);
-	
-	setData(frame, decoded, decodeLen);
-	
-	setEncode(frame, false);
-	
-	return 0;
-}
-
-int DataPacket::encodeData(IM920Frame& frame) const
-{
-	if (isEncoded(frame)) return 0;
-	
-	size_t dataLen = getPayloadLength(frame);
-	uint8_t data[dataLen];
-	
-	getData(frame, data);
-	
-	size_t encodeLen = getEncodeLength(frame) + 1;
-	resetPayloadLength(frame, encodeLen);
-	
-	setDataWithEncode(frame, data, dataLen);
-	
-	setEncode(frame, true);
-	
-	return 0;
-}
-
 size_t DataPacket::getDataLength(const IM920Frame& frame) const
 {
 	assert(getPacketLength(frame) == (getPayloadTerminator(frame) - getPayloadArray(frame)));
@@ -709,9 +664,12 @@ size_t DataPacket::getDataLength(const IM920Frame& frame) const
 	return getPacketLength(frame);
 }
 
-size_t DataPacket::getData(const IM920Frame& frame, uint8_t buf[]) const
+size_t DataPacket::getData(const IM920Frame& frame, uint8_t buf[], size_t size) const
 {
 	size_t length = getDataLength(frame);
+
+	if (size < length)
+		length = size;
 
 	memcpy(buf, getPayloadArray(frame), length);
 	
@@ -723,36 +681,6 @@ const uint8_t* DataPacket::getData(const IM920Frame& frame) const
 	return getPayloadArray(frame);
 }
 
-size_t DataPacket::getDataWithDecode(IM920Frame& frame, uint8_t buf[]) const
-{
-	size_t decodeLen;
-	const char* base64String = reinterpret_cast<const char*>(getPayloadArray(frame));
-	
-	decodeLen = decode_base64(base64String, buf);
-	
-	return decodeLen;
-}
-
-size_t DataPacket::getDecodeLength(IM920Frame& frame) const
-{
-	const char* base64String = reinterpret_cast<const char*>(getPayloadArray(frame));
-	size_t decodeLen = decode_base64_length(base64String);
-	
-	assert(!(decodeLen > BIN_DATA_MAX_LENGTH));
-	
-	return decodeLen;
-}
-
-size_t DataPacket::getEncodeLength(IM920Frame& frame) const
-{
-	size_t dataLen = getPayloadLength(frame);
-	size_t encodeLen = encode_base64_length(dataLen);
-	
-	assert(!(encodeLen > DATA_PACKET_PAYLOAD_SIZE));
-
-	return encodeLen;
-}
-
 size_t DataPacket::setData(IM920Frame& frame, const uint8_t data[], size_t length) const
 {
 	uint8_t* buf = getPayloadArray(frame);
@@ -762,28 +690,6 @@ size_t DataPacket::setData(IM920Frame& frame, const uint8_t data[], size_t lengt
 	resetPayloadLength(frame, length);
 	
 	memcpy(buf, data, length);
-	
-	updatePacketLength(frame);
-	
-	return length;
-}
-
-size_t DataPacket::setDataWithEncode(IM920Frame& frame, uint8_t data[], size_t length) const
-{
-	size_t encodeLen;
-	char* base64String = reinterpret_cast<char*>(getPayloadArray(frame));
-	
-	if (length > BIN_DATA_MAX_LENGTH) length = BIN_DATA_MAX_LENGTH;
-	
-	setEncode(frame, true);
-	
-	encodeLen = encode_base64_length(length) + 1;
-	assert(!(encodeLen > DATA_PACKET_PAYLOAD_SIZE));
-	
-	resetPayloadLength(frame, encodeLen);
-	
-	// store base64 encoded data to the payload of a data packet.
-	encode_base64(data, length,  base64String);
 	
 	updatePacketLength(frame);
 	
@@ -816,16 +722,19 @@ void NoticePacket::reset(IM920Frame& frame, size_t size) const
 
 size_t NoticePacket::getNoticeLength(const IM920Frame& frame) const
 {
-	assert(strlen(reinterpret_cast<const char*>(getPayloadArray(frame))) == (getPacketLength(frame) - 1));
+	assert(strlen(reinterpret_cast<const char*>(getPayloadArray(frame))) == (getPacketLength(frame)));
 
-	return getPacketLength(frame) - 1 /* '\0' */ ;
+	return getPacketLength(frame);
 }
 
-size_t NoticePacket::getNotice(const IM920Frame& frame, char buf[]) const
+size_t NoticePacket::getNotice(const IM920Frame& frame, char buf[], size_t size) const
 {
 	const char* notice = reinterpret_cast<const char*>(getPayloadArray(frame));
 	size_t len = getNoticeLength(frame);
 	
+	if (size < len + 1)
+		len = size - 1;
+
 	strncpy(buf, notice, len);
 	buf[len] = '\0';
 
@@ -837,9 +746,9 @@ const char* NoticePacket::getNotice(const IM920Frame& frame) const
 	return reinterpret_cast<const char*>(getPayloadArray(frame));
 }
 
-size_t NoticePacket::setNotice(IM920Frame& frame, char notice[]) const
+size_t NoticePacket::setNotice(IM920Frame& frame, const char notice[]) const
 {
-	size_t noticeLen = strlen(notice) + 1;
+	size_t noticeLen = strlen(notice);
 
 	if (noticeLen > NOTICE_MAX_LEN) noticeLen = NOTICE_MAX_LEN;
 	
@@ -847,17 +756,18 @@ size_t NoticePacket::setNotice(IM920Frame& frame, char notice[]) const
 	
 	char* buf = reinterpret_cast<char*>(getPayloadArray(frame));
 	strncpy(buf, notice, noticeLen);
-	buf[noticeLen - 1] = '\0';
+	buf[noticeLen] = '\0';
 	
 	updatePacketLength(frame);
 	
-	return noticeLen - 1;
+	return noticeLen;
 }
 
 IM920Frame::IM920Frame()
 	: _p(0), _rp(0)
 {
-	for (int i = 0; i < FRAME_PAYLOAD_SIZE; i++) _payload[i] = 0;
+	// +1 is for '\0' char
+	for (int i = 0; i < FRAME_PAYLOAD_SIZE + 1; i++) _payload[i] = 0;
 }
 
 IM920Frame::~IM920Frame()
@@ -884,7 +794,7 @@ void IM920Frame::clear()
 {
 	_p = 0;
 	_rp = 0;
-	for (int i = 0; i < FRAME_PAYLOAD_SIZE; i++) _payload[i] = 0;
+	for (int i = 0; i < FRAME_PAYLOAD_SIZE + 1; i++) _payload[i] = 0;
 }
 
 size_t IM920Frame::resetFrameLength(size_t length)
@@ -964,7 +874,12 @@ size_t IM920Interface::sendBytes(const uint8_t* data, size_t length)
 	
 	// send data
 	_serial->print( F("TXDA") );
-	ret = _serial->write(data, length);
+	char hexString[FRAME_PAYLOAD_SIZE*2+1];
+	for (int i = 0; i < length; i++) {
+		snprintf(hexString+i*2, 3, "%02X", data[i]);
+		ret = i + 1;
+	}
+	_serial->print(hexString);
 	_serial->print(IM920_COMMAND_TERM);
 	_serial->flush();
 	assert(ret == length);
@@ -1130,8 +1045,8 @@ size_t IM920Interface::_getResponse(char buf[], size_t length)
 	while(_isBusy());
 
 	_serial->setTimeout(_timeout);
-	ret = _serial->readBytesUntil('\n', buf, length);
-	buf[ret - 1] = '\0';
+	ret = _serial->readBytesUntil('\n', buf, length - 1);
+	buf[ret] = '\0';
 	
-	return ret - 1;
+	return ret;
 }
