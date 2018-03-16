@@ -114,8 +114,6 @@ public:
 
 	int getPacketType(const IM920Frame& frame) const;
 
-	bool isEncoded(const IM920Frame& frame) const;
-
 	bool isFragmented(const IM920Frame& frame) const;
 
 	bool isAckRequested(const IM920Frame& frame) const;
@@ -125,8 +123,6 @@ public:
 	void setPacketLength(IM920Frame& frame, size_t length) const;
 
 	void setPacketType(IM920Frame& frame, uint8_t type) const;
-
-	void setEncode(IM920Frame& frame, bool encode) const;
 
 	void setFragment(IM920Frame& frame, bool fragment) const;
 
