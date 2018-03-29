@@ -168,4 +168,6 @@ IM920通信モジュールを設定する。Interplanから出ているUSB inter
 * キャラクタ入出力: DCIO（初期値: DCIO)
 * 受信ID登録(初期値: 未登録)
   </br>送信側（相手）モジュールのIDを自身に登録する。双方向通信する場合はお互いのモジュールIDを登録し合う。
-  
+  
+## Quick usage
+[こちら](https://github.com/tutertlob/rny-1/blob/master/Mailbox_sender/Mailbox_sender.ino)のソースを参照
