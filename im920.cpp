@@ -310,6 +310,11 @@ int IM920::sendNotice(const char notice[])
 	return 0;
 }
 
+IM920Interface& IM920::getInterface()
+{
+	return _im920;
+}
+
 uint8_t IM920::_getNextFrameID()
 {
 	static uint8_t _sequence = 0;
@@ -1022,6 +1027,8 @@ int IM920Interface::_exec(const char cmd[], const char search[])
 	int ret = 0;
 	char buf[20];
 	
+	while(_isBusy());
+
 	// send the command
 	_serial->print(cmd);
 	_serial->flush();
@@ -1041,8 +1048,6 @@ bool IM920Interface::_isBusy()
 size_t IM920Interface::_getResponse(char buf[], size_t length)
 {
 	size_t ret;
-
-	while(_isBusy());
 
 	_serial->setTimeout(_timeout);
 	ret = _serial->readBytesUntil('\n', buf, length - 1);

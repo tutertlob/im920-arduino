@@ -351,6 +351,7 @@ public:
 
 	int sendNotice(const char notice[]);
 
+	IM920Interface& getInterface();
 };
 
 #endif /* IM920_H */
